@@ -1,8 +1,12 @@
 use anchor_lang::prelude::*;
 
-use solana_program::program::{invoke, invoke_signed};
+use mpl_token_metadata::{accounts::Metadata, types::TokenStandard};
+use solana_program::
+    program::{invoke, invoke_signed}
+;
+use transfer_pnft::MetaplexProgrammableTransferExtraAccounts;
 
-use crate::SharedError;
+use crate::{operations::transfer_pnft, SharedError};
 
 pub fn transfer_generic_spl<'info>(
     token_program: &AccountInfo<'info>,
@@ -17,7 +21,7 @@ pub fn transfer_generic_spl<'info>(
     payer: &AccountInfo<'info>,
     decimals: u8,
     amount: u64,
-    remaining_accounts: &[AccountInfo<'info>],
+    remaining_accounts: &'info [AccountInfo<'info>],
 ) -> Result<()> {
     msg!("{}", token_program.key());
     let expected_token_account =
@@ -48,7 +52,39 @@ pub fn transfer_generic_spl<'info>(
         ))?;
     }
 
-    msg!("Transferring {} (decimals={})", amount, decimals );
+    let extra_accounts = MetaplexProgrammableTransferExtraAccounts::new(
+        remaining_accounts,
+        &mint.key,
+        &source_token_account.key,
+        &target_token_account.key,
+    );
+
+    if let Some(x) = &extra_accounts.metadata {
+        // ok we may have a pnft. let's check
+        let metadata_obj = Metadata::try_from(*x)?;
+
+        if let Some(x) = metadata_obj.token_standard {
+            if x == TokenStandard::ProgrammableNonFungible {
+                transfer_pnft(
+                    &token_program.to_account_info(),
+                    &source_token_account.to_account_info(),
+                    &target_token_account.to_account_info(),
+                    &source_wallet.to_account_info(),
+                    &mint.to_account_info(),
+                    &target_wallet.to_account_info(),
+                    &associated_token_program.to_account_info(),
+                    &system_program.to_account_info(),
+                    authority_seeds,
+                    &payer.to_account_info(),
+                    &extra_accounts,
+                )?;
+                // done - bail out
+                return Ok(());
+            }
+        }
+    }
+
+    /// the regular (non-pnft) route
 
     let mut ix = spl_token_2022::instruction::transfer_checked(
         token_program.key,
@@ -62,22 +98,30 @@ pub fn transfer_generic_spl<'info>(
     )?;
 
     remaining_accounts.iter().for_each(|meta| {
-        ix.accounts.push(AccountMeta { pubkey: meta.key(), is_signer: false, is_writable: false })
+        ix.accounts.push(AccountMeta {
+            pubkey: meta.key(),
+            is_signer: false,
+            is_writable: false,
+        })
     });
 
     let infos = [
-        &[source_token_account.clone(), mint.clone(), target_token_account.clone(), source_wallet.clone()], 
-        remaining_accounts].concat();
-
+        &[
+            source_token_account.clone(),
+            mint.clone(),
+            target_token_account.clone(),
+            source_wallet.clone(),
+        ],
+        remaining_accounts,
+    ]
+    .concat();
 
     match authority_seeds {
         Some(x) => {
-            invoke_signed(&ix, 
-                infos.as_slice(), x)?;
+            invoke_signed(&ix, infos.as_slice(), x)?;
         }
         None => {
-            invoke(&ix, 
-                infos.as_slice())?;
+            invoke(&ix, infos.as_slice())?;
         }
     }
 
