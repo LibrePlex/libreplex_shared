@@ -25,6 +25,7 @@ pub fn transfer_any_asset<'info>(
     auth_rules: &'info AccountInfo<'info>,
     authority_seeds: Option<&[&[&[u8]]]>,
     payer: &AccountInfo<'info>,
+    mpl_token_program: &'info AccountInfo<'info>,
     amount: u64,
 ) -> Result<()> {
     let mut is_pnft = false;
@@ -64,6 +65,7 @@ pub fn transfer_any_asset<'info>(
                 sysvar_instructions: Some(sysvar_instructions),
                 auth_rules_program: Some(auth_rules_program),
                 auth_rules: Some(auth_rules),
+                mpl_token_program: Some(mpl_token_program)
             }
         )?;
     } else {

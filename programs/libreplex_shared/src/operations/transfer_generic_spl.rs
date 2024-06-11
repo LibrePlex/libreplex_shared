@@ -84,7 +84,7 @@ pub fn transfer_generic_spl<'info>(
         }
     }
 
-    /// the regular (non-pnft) route
+    // the regular (non-pnft) route
 
     let mut ix = spl_token_2022::instruction::transfer_checked(
         token_program.key,
